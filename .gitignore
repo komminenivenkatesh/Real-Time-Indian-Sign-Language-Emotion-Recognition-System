@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+.actionsenv/
+.ferenv/
+env/
+venv/
+
+# Data, models and recordings
+data/
+recordings/
+models/
+
+# PyTorch / Keras models
+*.pt
+*.pth
+*.keras
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
