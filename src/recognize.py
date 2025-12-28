@@ -1,37 +1,29 @@
+import os
 import cv2
-import mediapipe as mp
 import numpy as np
 import joblib
 import pyttsx3
 from collections import deque, Counter
 import time
 
+# optional heavy deps
+try:
+    import mediapipe as mp
+except Exception:
+    mp = None
+
 # ---------------- Paths ----------------
 MODEL_PATH = "data/models/landmarks_model.pkl"  # classic sklearn model (not the LSTM .pt)
 ENC_PATH = "data/models/label_encoder.pkl"
 
-# ---------------- Load model ------------
-model = joblib.load(MODEL_PATH)
-label_encoder = joblib.load(ENC_PATH)
-
 # ---------------- TTS -------------------
-engine = pyttsx3.init()
-engine.setProperty("rate", 165)
-
 SAY_MAP = {
     str(i): s for i, s in enumerate(["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE"])
 }
 
 # ---------------- MediaPipe -------------
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
-    model_complexity=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
-)
+mp_hands = mp.solutions.hands if mp is not None else None
+mp_draw = mp.solutions.drawing_utils if mp is not None else None
 
 
 # ---------------- Helpers ----------------
@@ -53,7 +45,7 @@ def normalize_hand(arr21x3):
     return arr
 
 
-def predict_with_conf(x_feat):
+def predict_with_conf(x_feat, model, label_encoder):
     """
     x_feat: (1, D)
     returns (label_str, conf_float)
@@ -72,112 +64,139 @@ def predict_with_conf(x_feat):
 
 
 # ---------------- Webcam -----------------
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-if not cap.isOpened():
-    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-if not cap.isOpened():
-    print("⚠️ No webcam found!")
-    exit()
+def main():
+    # runtime checks
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(ENC_PATH):
+        raise FileNotFoundError(
+            "Model or encoder not found. Please run training (train.py) to produce data/models/*.pkl"
+        )
 
-print("✅ Webcam started. Press 'q' to quit.")
+    model = joblib.load(MODEL_PATH)
+    label_encoder = joblib.load(ENC_PATH)
 
-# ---------------- Smoothing/Thresholds ---------------
-SMOOTH_N = 7  # majority vote window
-CONF_THRESH = 0.70  # require this confidence to show/speak
-VOTE_MIN_FRAC = 0.6  # majority fraction inside window
-last_spoken = ""  # what we last said
-pred_history = deque(maxlen=SMOOTH_N)
-last_say_time = 0.0
-SAY_COOLDOWN = 0.8  # seconds between TTS messages
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 165)
 
-# FPS
-t0 = time.time()
-frame_count = 0
-fps = 0.0
+    mp_hands = mp.solutions.hands
+    mp_draw = mp.solutions.drawing_utils
+    hands = mp_hands.Hands(
+        static_image_mode=False,
+        max_num_hands=2,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
 
-while True:
-    ok, frame = cap.read()
-    if not ok:
-        break
-    frame = cv2.flip(frame, 1)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        print("⚠️ No webcam found!")
+        return
 
-    # default UI text
-    shown_label = "Detecting..."
-    shown_conf = 0.0
+    print("✅ Webcam started. Press 'q' to quit.")
 
-    # Prepare landmarks
-    left = np.zeros((21, 3), dtype=np.float32)
-    right = np.zeros((21, 3), dtype=np.float32)
+    # ---------------- Smoothing/Thresholds ---------------
+    SMOOTH_N = 7  # majority vote window
+    CONF_THRESH = 0.70  # require this confidence to show/speak
+    VOTE_MIN_FRAC = 0.6  # majority fraction inside window
+    last_spoken = ""  # what we last said
+    pred_history = deque(maxlen=SMOOTH_N)
+    last_say_time = 0.0
+    SAY_COOLDOWN = 0.8  # seconds between TTS messages
 
-    if results.multi_hand_landmarks and results.multi_handedness:
-        # Draw + split into left/right consistently
-        for lm, hd in zip(results.multi_hand_landmarks, results.multi_handedness):
-            coords = np.array([[p.x, p.y, p.z] for p in lm.landmark], dtype=np.float32)
-            handed = hd.classification[0].label  # "Left" or "Right"
-            if handed == "Left":
-                left = coords
+    # FPS
+    t0 = time.time()
+    frame_count = 0
+    fps = 0.0
+
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        frame = cv2.flip(frame, 1)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = hands.process(rgb)
+
+        # default UI text
+        shown_label = "Detecting..."
+        shown_conf = 0.0
+
+        # Prepare landmarks
+        left = np.zeros((21, 3), dtype=np.float32)
+        right = np.zeros((21, 3), dtype=np.float32)
+
+        if results.multi_hand_landmarks and results.multi_handedness:
+            # Draw + split into left/right consistently
+            for lm, hd in zip(results.multi_hand_landmarks, results.multi_handedness):
+                coords = np.array([[p.x, p.y, p.z] for p in lm.landmark], dtype=np.float32)
+                handed = hd.classification[0].label  # "Left" or "Right"
+                if handed == "Left":
+                    left = coords
+                else:
+                    right = coords
+                mp_draw.draw_landmarks(frame, lm, mp_hands.HAND_CONNECTIONS)
+
+            # Normalize
+            left_n = normalize_hand(left)
+            right_n = normalize_hand(right)
+
+            # Feature: concat both (keeps shape 126 even if a hand is missing)
+            feat = np.concatenate([left_n.flatten(), right_n.flatten()])[None, :]  # (1,126)
+
+            # Predict
+            label_raw, conf = predict_with_conf(feat, model, label_encoder)
+
+            # Smooth by vote
+            pred_history.append((label_raw, conf))
+            labels_only = [p[0] for p in pred_history]
+            most, count = Counter(labels_only).most_common(1)[0]
+            frac = count / len(labels_only)
+
+            # Accept only if both conditions pass
+            if conf >= CONF_THRESH and frac >= VOTE_MIN_FRAC:
+                shown_label = most
+                shown_conf = conf
             else:
-                right = coords
-            mp_draw.draw_landmarks(frame, lm, mp_hands.HAND_CONNECTIONS)
+                shown_label = "Detecting..."
+                shown_conf = conf
 
-        # Normalize
-        left_n = normalize_hand(left)
-        right_n = normalize_hand(right)
+            # TTS (speak only when new & accepted & cooldown passed)
+            now = time.time()
+            if shown_label != "Detecting..." and shown_label != last_spoken and (now - last_say_time) > SAY_COOLDOWN:
+                to_say = SAY_MAP.get(shown_label, shown_label)
+                try:
+                    engine.say(to_say)
+                    engine.runAndWait()
+                except Exception:
+                    pass
+                last_spoken = shown_label
+                last_say_time = now
 
-        # Feature: concat both (keeps shape 126 even if a hand is missing)
-        feat = np.concatenate([left_n.flatten(), right_n.flatten()])[None, :]  # (1,126)
+        # FPS calc
+        frame_count += 1
+        if frame_count >= 10:
+            t1 = time.time()
+            fps = frame_count / (t1 - t0 + 1e-9)
+            t0 = t1
+            frame_count = 0
 
-        # Predict
-        label_raw, conf = predict_with_conf(feat)
+        # UI overlay
+        h, w = frame.shape[:2]
+        cv2.rectangle(frame, (0, 0), (w, 80), (0, 0, 0), -1)
+        line1 = f"Label: {shown_label}"
+        if shown_label != "Detecting...":
+            line1 += f"  ({shown_conf:.2f})"
+        cv2.putText(frame, line1, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.95, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
 
-        # Smooth by vote
-        pred_history.append((label_raw, conf))
-        labels_only = [p[0] for p in pred_history]
-        most, count = Counter(labels_only).most_common(1)[0]
-        frac = count / len(labels_only)
+        cv2.imshow("Real-Time ISL Recognition (classic model)", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
-        # Accept only if both conditions pass
-        if conf >= CONF_THRESH and frac >= VOTE_MIN_FRAC:
-            shown_label = most
-            shown_conf = conf
-        else:
-            shown_label = "Detecting..."
-            shown_conf = conf
+    cap.release()
+    cv2.destroyAllWindows()
 
-        # TTS (speak only when new & accepted & cooldown passed)
-        now = time.time()
-        if shown_label != "Detecting..." and shown_label != last_spoken and (now - last_say_time) > SAY_COOLDOWN:
-            to_say = SAY_MAP.get(shown_label, shown_label)
-            try:
-                engine.say(to_say)
-                engine.runAndWait()
-            except Exception:
-                pass
-            last_spoken = shown_label
-            last_say_time = now
 
-    # FPS calc
-    frame_count += 1
-    if frame_count >= 10:
-        t1 = time.time()
-        fps = frame_count / (t1 - t0 + 1e-9)
-        t0 = t1
-        frame_count = 0
-
-    # UI overlay
-    h, w = frame.shape[:2]
-    cv2.rectangle(frame, (0, 0), (w, 80), (0, 0, 0), -1)
-    line1 = f"Label: {shown_label}"
-    if shown_label != "Detecting...":
-        line1 += f"  ({shown_conf:.2f})"
-    cv2.putText(frame, line1, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.95, (0, 255, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-
-    cv2.imshow("Real-Time ISL Recognition (classic model)", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()

@@ -1,15 +1,29 @@
 import os
 import numpy as np
 import joblib
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except Exception:
+    def tqdm(x, *a, **k):
+        return x
 from collections import Counter
+
+# optional heavy deps
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.optim.lr_scheduler import ReduceLROnPlateau
+    from torch.utils.data import DataLoader, Dataset
+except Exception:
+    torch = None
+    nn = None
+    optim = None
+    ReduceLROnPlateau = None
+    DataLoader = None
+    Dataset = None
 
 # ---------------- Config ----------------
 DATA_DIR = "data/recordings"
@@ -27,28 +41,32 @@ LAYERS = 2
 VAL_SPLIT = 0.2
 SEED = 42
 
-torch.manual_seed(SEED)
+if torch is not None:
+    torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 
 # ---------------- Dataset ----------------
-class LandmarkDataset(Dataset):
-    def __init__(self, files, labels):
-        self.files = files
-        self.labels = labels
+if Dataset is not None:
+    class LandmarkDataset(Dataset):
+        def __init__(self, files, labels):
+            self.files = files
+            self.labels = labels
 
-    def __len__(self):
-        return len(self.files)
+        def __len__(self):
+            return len(self.files)
 
-    def __getitem__(self, idx):
-        data = np.load(self.files[idx])
-        x = torch.tensor(data, dtype=torch.float32)
-        y = torch.tensor(self.labels[idx], dtype=torch.long)
-        return x, y
+        def __getitem__(self, idx):
+            data = np.load(self.files[idx])
+            x = torch.tensor(data, dtype=torch.float32)
+            y = torch.tensor(self.labels[idx], dtype=torch.long)
+            return x, y
+else:
+    LandmarkDataset = None
 
 
 # ---------------- Load Data ----------------
-print("🔍 Loading landmark data...")
+print("Loading landmark data...")
 
 paths, labels = [], []
 for label_name in sorted(os.listdir(DATA_DIR)):
@@ -75,90 +93,108 @@ valid_idx = [i for i, lbl in enumerate(labels) if lbl in valid_labels]
 paths = [paths[i] for i in valid_idx]
 y = [y[i] for i in valid_idx]
 
-print("✅ Using classes with enough samples:")
+print("Using classes with enough samples:")
 for lbl in sorted(set(labels)):
     if counts[lbl] >= 50:
         print(f"  {lbl}: {counts[lbl]}")
 
 X_train, X_val, y_train, y_val = train_test_split(paths, y, test_size=VAL_SPLIT, stratify=y, random_state=SEED)
 
-train_ds = LandmarkDataset(X_train, y_train)
-val_ds = LandmarkDataset(X_val, y_val)
+train_ds = LandmarkDataset(X_train, y_train) if LandmarkDataset is not None else None
+val_ds = LandmarkDataset(X_val, y_val) if LandmarkDataset is not None else None
 
-train_dl = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
-val_dl = DataLoader(val_ds, batch_size=BATCH)
+train_dl = DataLoader(train_ds, batch_size=BATCH, shuffle=True) if DataLoader is not None else None
+val_dl = DataLoader(val_ds, batch_size=BATCH) if DataLoader is not None else None
 
 INPUT_DIM = 126  # number of features per frame (hand landmarks)
 
 
 # ---------------- Model ----------------
-class BiLSTMClassifier(nn.Module):
-    def __init__(self, input_dim, hidden, layers, num_classes):
-        super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden, num_layers=layers, batch_first=True, bidirectional=True, dropout=0.3)
-        self.head = nn.Sequential(
-            nn.LayerNorm(hidden * 2),
-            nn.Dropout(0.3),
-            nn.Linear(hidden * 2, hidden),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden, num_classes),
-        )
+if nn is not None:
+    class BiLSTMClassifier(nn.Module):
+        def __init__(self, input_dim, hidden, layers, num_classes):
+            super().__init__()
+            self.lstm = nn.LSTM(
+                input_dim, hidden, num_layers=layers, batch_first=True, bidirectional=True, dropout=0.3
+            )
+            self.head = nn.Sequential(
+                nn.LayerNorm(hidden * 2),
+                nn.Dropout(0.3),
+                nn.Linear(hidden * 2, hidden),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.2),
+                nn.Linear(hidden, num_classes),
+            )
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        feat = out[:, -1, :]
-        return self.head(feat)
+        def forward(self, x):
+            out, _ = self.lstm(x)
+            feat = out[:, -1, :]
+            return self.head(feat)
+else:
+    BiLSTMClassifier = None
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch and torch.cuda.is_available() else "cpu") if torch is not None else None
 num_classes = len(le.classes_)
 
-model = BiLSTMClassifier(INPUT_DIM, HIDDEN, LAYERS, num_classes).to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
-scheduler = ReduceLROnPlateau(optimizer, mode="max", patience=3, factor=0.5)
+if BiLSTMClassifier is not None:
+    model = BiLSTMClassifier(INPUT_DIM, HIDDEN, LAYERS, num_classes).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+    scheduler = ReduceLROnPlateau(optimizer, mode="max", patience=3, factor=0.5)
+else:
+    model = None
+    criterion = None
+    optimizer = None
+    scheduler = None
 
 
 # ---------------- Training Loop ----------------
-print("\n🚀 Starting training...")
+print("\nStarting training...")
 
 best_acc = 0
-for epoch in range(1, EPOCHS + 1):
-    model.train()
-    total_loss = 0
-    for xb, yb in tqdm(train_dl, desc=f"Epoch {epoch:02d}"):
-        xb, yb = xb.to(device), yb.to(device)
-        optimizer.zero_grad()
-        preds = model(xb)
-        loss = criterion(preds, yb)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+if model is not None and train_dl is not None:
+    # ---------------- Training Loop ----------------
+    print("\nStarting training...")
 
-    # Validation
-    model.eval()
-    correct, total = 0, 0
-    with torch.no_grad():
-        for xb, yb in val_dl:
+    best_acc = 0
+    for epoch in range(1, EPOCHS + 1):
+        model.train()
+        total_loss = 0
+        for xb, yb in tqdm(train_dl, desc=f"Epoch {epoch:02d}"):
             xb, yb = xb.to(device), yb.to(device)
+            optimizer.zero_grad()
             preds = model(xb)
-            correct += (preds.argmax(1) == yb).sum().item()
-            total += len(yb)
+            loss = criterion(preds, yb)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
 
-    val_acc = correct / total
-    avg_loss = total_loss / len(train_dl)
-    scheduler.step(val_acc)
+        # Validation
+        model.eval()
+        correct, total = 0, 0
+        with torch.no_grad():
+            for xb, yb in val_dl:
+                xb, yb = xb.to(device), yb.to(device)
+                preds = model(xb)
+                correct += (preds.argmax(1) == yb).sum().item()
+                total += len(yb)
 
-    print(f"Epoch {epoch:02d} | loss {avg_loss:.4f} | val_acc {val_acc:.3f}")
+        val_acc = correct / total
+        avg_loss = total_loss / len(train_dl)
+        scheduler.step(val_acc)
 
-    if val_acc > best_acc:
-        best_acc = val_acc
-        torch.save(model.state_dict(), MODEL_PATH)
-        print("  ✅ Saved best model")
+        print(f"Epoch {epoch:02d} | loss {avg_loss:.4f} | val_acc {val_acc:.3f}")
 
-    if epoch > 5 and val_acc < best_acc * 0.98:
-        print("  ⛳ Early stopping")
-        break
+        if val_acc > best_acc:
+            best_acc = val_acc
+            torch.save(model.state_dict(), MODEL_PATH)
+            print("  Saved best model")
 
-print(f"✅ Done. Best val_acc: {best_acc:.3f}")
+        if epoch > 5 and val_acc < best_acc * 0.98:
+            print("  Early stopping")
+            break
+
+    print(f"Done. Best val_acc: {best_acc:.3f}")
+else:
+    print("Skipping training: required deep-learning dependencies are not available in this environment.")

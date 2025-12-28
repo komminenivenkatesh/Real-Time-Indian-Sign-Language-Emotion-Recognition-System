@@ -3,7 +3,12 @@ import time
 import sys
 import numpy as np
 import cv2
-import mediapipe as mp
+
+# optional heavy dependency
+try:
+    import mediapipe as mp
+except Exception:
+    mp = None
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -17,8 +22,8 @@ MODEL_DIR = os.path.join(DATA_DIR, "models")
 os.makedirs(REC_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
+mp_hands = mp.solutions.hands if mp is not None else None
+mp_drawing = mp.solutions.drawing_utils if mp is not None else None
 
 
 def extract_hand_landmarks(results):

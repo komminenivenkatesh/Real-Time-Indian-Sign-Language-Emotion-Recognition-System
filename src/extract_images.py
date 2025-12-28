@@ -3,7 +3,12 @@ import time
 import glob
 import numpy as np
 import cv2
-import mediapipe as mp
+
+# optional heavy dependency
+try:
+    import mediapipe as mp
+except Exception:
+    mp = None
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 INPUT_ROOT = os.path.join(PROJECT_ROOT, "data", "Indian")  # your dataset folders
@@ -11,7 +16,7 @@ OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "data", "recordings")  # where .npy fil
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
-mp_hands = mp.solutions.hands
+mp_hands = mp.solutions.hands if mp is not None else None
 
 
 def extract_from_image(img_bgr, hands):
@@ -38,7 +43,11 @@ def extract_from_image(img_bgr, hands):
 
 
 def main():
+    if mp is None:
+        raise ImportError("mediapipe is required to run extract_images.py — install it or skip this step")
+
     total = 0
+    mp_hands = mp.solutions.hands
     with mp_hands.Hands(
         model_complexity=1, max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5
     ) as hands:
