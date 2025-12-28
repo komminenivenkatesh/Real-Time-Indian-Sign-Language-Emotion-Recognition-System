@@ -11,6 +11,11 @@ TEST_DIR = os.path.join(ROOT, "data", "test")
 MODEL_DIR = os.path.join(ROOT, "data", "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
+if not os.path.isdir(TRAIN_DIR):
+    raise FileNotFoundError(f"Train directory not found: {TRAIN_DIR}. Prepare image folders for training.")
+if not os.path.isdir(TEST_DIR):
+    raise FileNotFoundError(f"Test directory not found: {TEST_DIR}. Prepare test images or set TEST_DIR correctly.")
+
 IMG_SIZE = (224, 224)
 BATCH = 32
 EPOCHS = 15

@@ -16,6 +16,9 @@ DATA_DIR = "data/recordings"
 MODEL_PATH = "data/models/isl_lstm_model.pt"
 ENCODER_PATH = "data/models/label_encoder.pkl"
 
+if not os.path.isdir(DATA_DIR):
+    raise FileNotFoundError(f"Recordings data directory not found: {DATA_DIR}. Run `extract_images.py` first.")
+
 EPOCHS = 20
 BATCH = 32
 LR = 1e-3

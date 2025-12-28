@@ -10,6 +10,9 @@ DATA_PATH = "data/action_landmarks"
 SAVE_PATH = "data/models"
 os.makedirs(SAVE_PATH, exist_ok=True)
 
+if not os.path.isdir(DATA_PATH):
+    raise FileNotFoundError(f"Data path not found: {DATA_PATH}. Prepare action landmark .npy files before training.")
+
 X, y = [], []
 for label in os.listdir(DATA_PATH):
     for file in os.listdir(os.path.join(DATA_PATH, label)):

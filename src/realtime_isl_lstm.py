@@ -35,9 +35,13 @@ class BiLSTMClassifier(nn.Module):
 
 # --- Load model & labels ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if not os.path.exists(ENCODER_PATH):
+    raise FileNotFoundError(f"Label encoder not found at {ENCODER_PATH}. Please train or provide the file.")
 le = joblib.load(ENCODER_PATH)
 num_classes = len(le.classes_)
 model = BiLSTMClassifier(INPUT_DIM, HIDDEN, LAYERS, num_classes).to(device)
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}. Please train or provide the file.")
 model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.eval()
 

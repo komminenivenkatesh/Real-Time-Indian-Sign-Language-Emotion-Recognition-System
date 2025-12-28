@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import torch
@@ -10,7 +11,11 @@ from collections import deque
 SEQ_LEN = 30
 
 # load label encoder + model
-le = joblib.load("data/models/action_label_encoder.pkl")
+LE_PATH = "data/models/action_label_encoder.pkl"
+MODEL_PATH = "data/models/action_bilstm.pt"
+if not os.path.exists(LE_PATH):
+    raise FileNotFoundError(f"Label encoder not found at {LE_PATH}. Please train or provide the file.")
+le = joblib.load(LE_PATH)
 
 
 class BiLSTM(nn.Module):
@@ -62,7 +67,9 @@ def extract_vec(res):
 
 D = 33 * 3 + 21 * 3 + 21 * 3
 model = BiLSTM(D, 128, 2, len(le.classes_))
-model.load_state_dict(torch.load("data/models/action_bilstm.pt", map_location="cpu"))
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}. Please train or provide the file.")
+model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
 model.eval()
 
 cap = cv2.VideoCapture(0)
