@@ -1,4 +1,5 @@
-import json, os
+import json
+import os
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -6,7 +7,7 @@ from tensorflow.keras import layers
 # -------- paths --------
 ROOT = os.path.dirname(os.path.dirname(__file__))  # project root
 TRAIN_DIR = os.path.join(ROOT, "data", "train")
-TEST_DIR  = os.path.join(ROOT, "data", "test")
+TEST_DIR = os.path.join(ROOT, "data", "test")
 MODEL_DIR = os.path.join(ROOT, "data", "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -16,10 +17,24 @@ EPOCHS = 15
 
 # -------- datasets --------
 train_ds = keras.utils.image_dataset_from_directory(
-    TRAIN_DIR, image_size=IMG_SIZE, batch_size=BATCH, shuffle=True, label_mode="categorical", seed=42, validation_split=0.1, subset="training"
+    TRAIN_DIR,
+    image_size=IMG_SIZE,
+    batch_size=BATCH,
+    shuffle=True,
+    label_mode="categorical",
+    seed=42,
+    validation_split=0.1,
+    subset="training",
 )
 val_ds = keras.utils.image_dataset_from_directory(
-    TRAIN_DIR, image_size=IMG_SIZE, batch_size=BATCH, shuffle=True, label_mode="categorical", seed=42, validation_split=0.1, subset="validation"
+    TRAIN_DIR,
+    image_size=IMG_SIZE,
+    batch_size=BATCH,
+    shuffle=True,
+    label_mode="categorical",
+    seed=42,
+    validation_split=0.1,
+    subset="validation",
 )
 test_ds = keras.utils.image_dataset_from_directory(
     TEST_DIR, image_size=IMG_SIZE, batch_size=BATCH, shuffle=False, label_mode="categorical"
@@ -36,20 +51,21 @@ with open(os.path.join(MODEL_DIR, "label_map.json"), "w") as f:
 # Prefetch for speed
 AUTOTUNE = tf.data.AUTOTUNE
 train_ds = train_ds.prefetch(AUTOTUNE)
-val_ds   = val_ds.prefetch(AUTOTUNE)
-test_ds  = test_ds.prefetch(AUTOTUNE)
+val_ds = val_ds.prefetch(AUTOTUNE)
+test_ds = test_ds.prefetch(AUTOTUNE)
 
 # -------- data aug --------
-data_augment = keras.Sequential([
-    layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.05),
-    layers.RandomZoom(0.1),
-], name="augment")
+data_augment = keras.Sequential(
+    [
+        layers.RandomFlip("horizontal"),
+        layers.RandomRotation(0.05),
+        layers.RandomZoom(0.1),
+    ],
+    name="augment",
+)
 
 # -------- model (MobileNetV2) --------
-base = keras.applications.MobileNetV2(
-    input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet"
-)
+base = keras.applications.MobileNetV2(input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet")
 base.trainable = False  # warmup with frozen base
 
 inputs = keras.Input(shape=IMG_SIZE + (3,))
@@ -60,16 +76,12 @@ x = layers.GlobalAveragePooling2D()(x)
 x = layers.Dropout(0.2)(x)
 outputs = layers.Dense(num_classes, activation="softmax")(x)
 model = keras.Model(inputs, outputs)
-model.compile(optimizer=keras.optimizers.Adam(1e-3),
-              loss="categorical_crossentropy",
-              metrics=["accuracy"])
+model.compile(optimizer=keras.optimizers.Adam(1e-3), loss="categorical_crossentropy", metrics=["accuracy"])
 
 ckpt_path = os.path.join(MODEL_DIR, "emotion_mnv2_best.keras")
 callbacks = [
-    keras.callbacks.ModelCheckpoint(ckpt_path, monitor="val_accuracy",
-                                    save_best_only=True, verbose=1),
-    keras.callbacks.EarlyStopping(monitor="val_accuracy",
-                                  patience=3, restore_best_weights=True)
+    keras.callbacks.ModelCheckpoint(ckpt_path, monitor="val_accuracy", save_best_only=True, verbose=1),
+    keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=3, restore_best_weights=True),
 ]
 
 print(model.summary())
@@ -79,8 +91,7 @@ history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS, callbacks=c
 base.trainable = True
 for layer in base.layers[:-40]:
     layer.trainable = False
-model.compile(optimizer=keras.optimizers.Adam(1e-4),
-              loss="categorical_crossentropy", metrics=["accuracy"])
+model.compile(optimizer=keras.optimizers.Adam(1e-4), loss="categorical_crossentropy", metrics=["accuracy"])
 history2 = model.fit(train_ds, validation_data=val_ds, epochs=5, callbacks=callbacks)
 
 # Final save

@@ -1,4 +1,6 @@
-import os, time, sys
+import os
+import time
+import sys
 import numpy as np
 import cv2
 import mediapipe as mp
@@ -18,6 +20,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
+
 def extract_hand_landmarks(results):
     left = np.zeros((21, 3), dtype=np.float32)
     right = np.zeros((21, 3), dtype=np.float32)
@@ -35,6 +38,7 @@ def extract_hand_landmarks(results):
     feat = np.concatenate([left.flatten(), right.flatten()], axis=0)
     return feat
 
+
 def record_class(label, seconds=12, min_conf=0.5):
     label_dir = os.path.join(REC_DIR, label)
     os.makedirs(label_dir, exist_ok=True)
@@ -44,7 +48,9 @@ def record_class(label, seconds=12, min_conf=0.5):
         sys.exit(1)
     print(f"Recording label '{label}' for {seconds}s…")
     frames = []
-    with mp_hands.Hands(model_complexity=1, max_num_hands=2, min_detection_confidence=min_conf, min_tracking_confidence=min_conf) as hands:
+    with mp_hands.Hands(
+        model_complexity=1, max_num_hands=2, min_detection_confidence=min_conf, min_tracking_confidence=min_conf
+    ) as hands:
         t0 = time.time()
         while time.time() - t0 < seconds:
             ok, frame = cap.read()
@@ -58,7 +64,7 @@ def record_class(label, seconds=12, min_conf=0.5):
                     mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)
             feat = extract_hand_landmarks(results)
             frames.append(feat)
-            cv2.putText(frame, f"Label: {label}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+            cv2.putText(frame, f"Label: {label}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             cv2.imshow("Recording", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
@@ -69,11 +75,13 @@ def record_class(label, seconds=12, min_conf=0.5):
     np.save(out_path, arr)
     print(f"✅ Saved {arr.shape[0]} frames at {out_path}")
 
+
 def load_dataset():
     X, y = [], []
     for label in sorted(os.listdir(REC_DIR)):
         ldir = os.path.join(REC_DIR, label)
-        if not os.path.isdir(ldir): continue
+        if not os.path.isdir(ldir):
+            continue
         for f in os.listdir(ldir):
             if f.endswith(".npy"):
                 arr = np.load(os.path.join(ldir, f))
@@ -84,6 +92,7 @@ def load_dataset():
         print("❌ No data found. Record some samples first.")
         sys.exit(1)
     return np.array(X, dtype=np.float32), np.array(y)
+
 
 def train_and_save():
     X, y = load_dataset()
@@ -98,6 +107,7 @@ def train_and_save():
     dump(clf, os.path.join(MODEL_DIR, "landmarks_model.pkl"))
     dump(le, os.path.join(MODEL_DIR, "label_encoder.pkl"))
     print("✅ Model saved to data/models/")
+
 
 if __name__ == "__main__":
     print("Options:")

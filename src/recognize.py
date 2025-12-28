@@ -7,8 +7,8 @@ from collections import deque, Counter
 import time
 
 # ---------------- Paths ----------------
-MODEL_PATH = "data/models/landmarks_model.pkl"     # classic sklearn model (not the LSTM .pt)
-ENC_PATH   = "data/models/label_encoder.pkl"
+MODEL_PATH = "data/models/landmarks_model.pkl"  # classic sklearn model (not the LSTM .pt)
+ENC_PATH = "data/models/label_encoder.pkl"
 
 # ---------------- Load model ------------
 model = joblib.load(MODEL_PATH)
@@ -18,20 +18,21 @@ label_encoder = joblib.load(ENC_PATH)
 engine = pyttsx3.init()
 engine.setProperty("rate", 165)
 
-SAY_MAP = {str(i): s for i, s in enumerate(
-    ["ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"]
-)}
+SAY_MAP = {
+    str(i): s for i, s in enumerate(["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE"])
+}
 
 # ---------------- MediaPipe -------------
 mp_hands = mp.solutions.hands
-mp_draw  = mp.solutions.drawing_utils
+mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
     model_complexity=1,
     min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_tracking_confidence=0.5,
 )
+
 
 # ---------------- Helpers ----------------
 def normalize_hand(arr21x3):
@@ -51,6 +52,7 @@ def normalize_hand(arr21x3):
     arr /= scale
     return arr
 
+
 def predict_with_conf(x_feat):
     """
     x_feat: (1, D)
@@ -60,13 +62,14 @@ def predict_with_conf(x_feat):
     conf = 1.0
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(x_feat)[0]
-        idx  = int(np.argmax(probs))
+        idx = int(np.argmax(probs))
         conf = float(np.max(probs))
     else:
         # Some models (e.g., SVC without probability) don't provide proba
         idx = int(model.predict(x_feat)[0])
     label = label_encoder.inverse_transform([idx])[0]
     return label, conf
+
 
 # ---------------- Webcam -----------------
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -79,13 +82,13 @@ if not cap.isOpened():
 print("✅ Webcam started. Press 'q' to quit.")
 
 # ---------------- Smoothing/Thresholds ---------------
-SMOOTH_N = 7                 # majority vote window
-CONF_THRESH = 0.70           # require this confidence to show/speak
-VOTE_MIN_FRAC = 0.6          # majority fraction inside window
-last_spoken = ""             # what we last said
+SMOOTH_N = 7  # majority vote window
+CONF_THRESH = 0.70  # require this confidence to show/speak
+VOTE_MIN_FRAC = 0.6  # majority fraction inside window
+last_spoken = ""  # what we last said
 pred_history = deque(maxlen=SMOOTH_N)
 last_say_time = 0.0
-SAY_COOLDOWN = 0.8           # seconds between TTS messages
+SAY_COOLDOWN = 0.8  # seconds between TTS messages
 
 # FPS
 t0 = time.time()
@@ -120,7 +123,7 @@ while True:
             mp_draw.draw_landmarks(frame, lm, mp_hands.HAND_CONNECTIONS)
 
         # Normalize
-        left_n  = normalize_hand(left)
+        left_n = normalize_hand(left)
         right_n = normalize_hand(right)
 
         # Feature: concat both (keeps shape 126 even if a hand is missing)
@@ -169,11 +172,11 @@ while True:
     line1 = f"Label: {shown_label}"
     if shown_label != "Detecting...":
         line1 += f"  ({shown_conf:.2f})"
-    cv2.putText(frame, line1, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.95, (0,255,0), 2, cv2.LINE_AA)
-    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(frame, line1, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.95, (0, 255, 0), 2, cv2.LINE_AA)
+    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
 
     cv2.imshow("Real-Time ISL Recognition (classic model)", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()

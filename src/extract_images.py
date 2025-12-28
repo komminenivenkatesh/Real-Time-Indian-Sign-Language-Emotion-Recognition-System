@@ -1,15 +1,18 @@
-import os, time, glob
+import os
+import time
+import glob
 import numpy as np
 import cv2
 import mediapipe as mp
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-INPUT_ROOT   = os.path.join(PROJECT_ROOT, "data", "Indian")       # your dataset folders
-OUTPUT_ROOT  = os.path.join(PROJECT_ROOT, "data", "recordings")   # where .npy files go
+INPUT_ROOT = os.path.join(PROJECT_ROOT, "data", "Indian")  # your dataset folders
+OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "data", "recordings")  # where .npy files go
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
 mp_hands = mp.solutions.hands
+
 
 def extract_from_image(img_bgr, hands):
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
@@ -33,22 +36,23 @@ def extract_from_image(img_bgr, hands):
         return None
     return feat
 
+
 def main():
     total = 0
-    with mp_hands.Hands(model_complexity=1, max_num_hands=2,
-                        min_detection_confidence=0.5,
-                        min_tracking_confidence=0.5) as hands:
+    with mp_hands.Hands(
+        model_complexity=1, max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5
+    ) as hands:
 
         for label in sorted(os.listdir(INPUT_ROOT)):
             label_dir = os.path.join(INPUT_ROOT, label)
-            if not os.path.isdir(label_dir): 
+            if not os.path.isdir(label_dir):
                 continue
 
             clean_label = label.strip().replace(" ", "").replace("-", "").upper()
             out_dir = os.path.join(OUTPUT_ROOT, clean_label)
             os.makedirs(out_dir, exist_ok=True)
 
-            patterns = ("*.jpg","*.jpeg","*.png","*.bmp","*.webp")
+            patterns = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.webp")
             files = []
             for p in patterns:
                 files.extend(glob.glob(os.path.join(label_dir, p)))
@@ -59,7 +63,7 @@ def main():
             for fp in files:
                 img = cv2.imread(fp)
                 if img is None:
-                    print("  ⚠️ could not read:", fp); 
+                    print("  ⚠️ could not read:", fp)
                     continue
                 feat = extract_from_image(img, hands)
                 if feat is None:
@@ -75,6 +79,7 @@ def main():
                     print(f"  saved {total} samples…")
 
     print(f"\n✅ Done. Saved {total} landmark files to {OUTPUT_ROOT}")
+
 
 if __name__ == "__main__":
     main()

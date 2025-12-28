@@ -1,4 +1,7 @@
-import os, numpy as np, joblib, torch
+import os
+import numpy as np
+import joblib
+import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -6,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+from collections import Counter
 
 # ---------------- Config ----------------
 DATA_DIR = "data/recordings"
@@ -22,6 +26,7 @@ SEED = 42
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
+
 
 # ---------------- Dataset ----------------
 class LandmarkDataset(Dataset):
@@ -61,7 +66,6 @@ os.makedirs("data/models", exist_ok=True)
 joblib.dump(le, ENCODER_PATH)
 
 # Filter out classes with too few samples
-from collections import Counter
 counts = Counter(labels)
 valid_labels = [k for k, v in counts.items() if v >= 50]
 valid_idx = [i for i, lbl in enumerate(labels) if lbl in valid_labels]
@@ -73,9 +77,7 @@ for lbl in sorted(set(labels)):
     if counts[lbl] >= 50:
         print(f"  {lbl}: {counts[lbl]}")
 
-X_train, X_val, y_train, y_val = train_test_split(
-    paths, y, test_size=VAL_SPLIT, stratify=y, random_state=SEED
-)
+X_train, X_val, y_train, y_val = train_test_split(paths, y, test_size=VAL_SPLIT, stratify=y, random_state=SEED)
 
 train_ds = LandmarkDataset(X_train, y_train)
 val_ds = LandmarkDataset(X_val, y_val)
@@ -90,20 +92,14 @@ INPUT_DIM = 126  # number of features per frame (hand landmarks)
 class BiLSTMClassifier(nn.Module):
     def __init__(self, input_dim, hidden, layers, num_classes):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_dim, hidden,
-            num_layers=layers,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.3
-        )
+        self.lstm = nn.LSTM(input_dim, hidden, num_layers=layers, batch_first=True, bidirectional=True, dropout=0.3)
         self.head = nn.Sequential(
             nn.LayerNorm(hidden * 2),
             nn.Dropout(0.3),
             nn.Linear(hidden * 2, hidden),
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
-            nn.Linear(hidden, num_classes)
+            nn.Linear(hidden, num_classes),
         )
 
     def forward(self, x):
@@ -118,7 +114,7 @@ num_classes = len(le.classes_)
 model = BiLSTMClassifier(INPUT_DIM, HIDDEN, LAYERS, num_classes).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
-scheduler = ReduceLROnPlateau(optimizer, mode='max', patience=3, factor=0.5)
+scheduler = ReduceLROnPlateau(optimizer, mode="max", patience=3, factor=0.5)
 
 
 # ---------------- Training Loop ----------------

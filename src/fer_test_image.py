@@ -1,5 +1,7 @@
 from fer import FER
-import cv2, glob, os
+import cv2
+import glob
+import os
 
 # Folder where your images are stored
 base_folder = r"C:\Users\kommi\OneDrive\Desktop\ml_project\data\train\happy"
